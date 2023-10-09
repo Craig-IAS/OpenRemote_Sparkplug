@@ -23,6 +23,7 @@ import org.openremote.manager.setup.ManagerSetup;
 import org.openremote.model.Constants;
 import org.openremote.model.Container;
 import org.openremote.model.asset.impl.ThingAsset;
+import org.openremote.model.custom.SparkplugAsset;
 
 public class CustomManagerSetup extends ManagerSetup {
 
@@ -36,5 +37,9 @@ public class CustomManagerSetup extends ManagerSetup {
 
         ThingAsset thing = new ThingAsset("Custom Thing").setRealm(Constants.MASTER_REALM);
         thing = assetStorageService.merge(thing);
+        SparkplugAsset sp = new SparkplugAsset("Custom Sparkplug").setRealm("custom");
+        sp = assetStorageService.merge(sp);
+
+
     }
 }

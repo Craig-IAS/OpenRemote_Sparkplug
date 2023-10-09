@@ -53,5 +53,14 @@ public class CustomKeycloakSetup extends AbstractKeycloakSetup {
             ClientRole.READ,
             ClientRole.WRITE
         });
+
+        // Create service user(s) for custom realm
+        createUser("custom", "custom2", customUserPassword, "First", "Last", null, true, new ClientRole[] {
+                ClientRole.READ,
+                ClientRole.WRITE
+        });
+
+
+
     }
 }

@@ -3,7 +3,16 @@ package org.openremote.manager.mqtt;
 
 import io.netty.buffer.ByteBuf;
 import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
+import org.eclipse.tahu.exception.TahuException;
+import org.eclipse.tahu.host.CommandPublisher;
+import org.eclipse.tahu.host.TahuPayloadHandler;
+import org.eclipse.tahu.message.PayloadDecoder;
+import org.eclipse.tahu.message.model.SparkplugBPayload;
+import org.eclipse.tahu.message.SparkplugBPayloadDecoder;
+import org.eclipse.tahu.mqtt.MqttClientId;
+import org.eclipse.tahu.mqtt.MqttServerName;
 import org.keycloak.KeycloakSecurityContext;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 
 import org.openremote.manager.security.ManagerIdentityService;
 import org.openremote.manager.security.ManagerKeycloakIdentityProvider;
@@ -22,6 +31,24 @@ public class SparkplugMQTTHandler extends MQTTHandler {
     protected AssetStorageService assetService;
     protected TimerService timerService;
 
+    protected MqttEventHandler mqttEventHandler;
+    protected MqttCommandPublisher commandPublisher;
+
+    protected SparkplugBPayloadDecoder decoder;
+    protected TahuPayloadHandler payloadHandler;
+
+    protected MqttServerName mqttServerName;
+    protected MqttClientId mqttClientId;
+
+    public SparkplugMQTTHandler() throws TahuException {
+        this.mqttEventHandler = new MqttEventHandler();
+        this.commandPublisher = new MqttCommandPublisher();
+        this.mqttServerName = new MqttServerName("openremote");
+        this.mqttClientId = new MqttClientId("openremote",true);
+        this.decoder = new SparkplugBPayloadDecoder();
+        this.payloadHandler = new TahuPayloadHandler(mqttEventHandler, commandPublisher, decoder);
+    }
+
     @Override
     protected boolean topicMatches(Topic topic) {
         String topicString = topicTokenIndexToString(topic, 0) + topicTokenIndexToString(topic, 1);
@@ -38,6 +65,9 @@ public class SparkplugMQTTHandler extends MQTTHandler {
         ManagerIdentityService identityService = container.getService(ManagerIdentityService.class);
         assetService = container.getService(AssetStorageService.class);
         timerService = container.getService(TimerService.class);
+
+        //TODO: publish mqtt birth message as per sparkplug spec
+        ///TODO: sub to own topic as per sparkplug spec
 
         if (!identityService.isKeycloakEnabled()) {
             LOG.warning("MQTT connections are not supported when not using Keycloak identity provider");
@@ -82,6 +112,7 @@ public class SparkplugMQTTHandler extends MQTTHandler {
     @Override
     public Set<String> getPublishListenerTopics() {
         getLogger().fine("getPublishListenerTopics");
+        // topics are split by periods and "/" so we need to work around this for now
         return Set.of(
                 "spBv1"+"/0/" + TOKEN_MULTI_LEVEL_WILDCARD
         );
@@ -91,7 +122,37 @@ public class SparkplugMQTTHandler extends MQTTHandler {
     public void onPublish(RemotingConnection connection, Topic topic, ByteBuf body) {
         //log the topic and body
         getLogger().info("onPublish: " + topic + " " + body.toString());
+        //The topic is being split by a period so for now we rebuild the topic
+        //TODO: fix this somewhere else
+        String topicString = topic.getString();
+        topicString = topicString.replaceFirst("/", ".");
+        String[] topicArray = topicString.split("/");
 
+        MqttMessage message = new MqttMessage(extractReadableBytes(body));
+
+
+
+
+        payloadHandler.handlePayload(topicString,topicArray,message,mqttServerName,mqttClientId);
+
+
+
+
+
+    }
+    private byte[] extractReadableBytes(ByteBuf buffer) {
+        if (buffer.hasArray()) {
+            int start = buffer.arrayOffset() + buffer.readerIndex();
+            int length = buffer.readableBytes();
+
+            byte[] array = new byte[length];
+            System.arraycopy(buffer.array(), start, array, 0, length);
+            return array;
+        } else {
+            byte[] array = new byte[buffer.readableBytes()];
+            buffer.getBytes(buffer.readerIndex(), array);
+            return array;
+        }
     }
 
     @Override

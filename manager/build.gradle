@@ -1,10 +1,14 @@
 apply plugin: "java-library"
-
+repositories {
+    mavenCentral()
+}
 dependencies {
     api resolveProject(":container")
     api resolveProject(":manager")
     api project(":agent")
     api project(":model")
+    api "org.eclipse.tahu:tahu-host:1.0.5"
+
 }
 
 task installDist {
