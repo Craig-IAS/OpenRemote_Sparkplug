@@ -32,6 +32,7 @@ import static org.openremote.manager.event.ClientEventService.CLIENT_INBOUND_QUE
 import static org.openremote.manager.mqtt.DefaultMQTTHandler.prepareHeaders;
 import static org.openremote.model.attribute.AttributeEvent.HEADER_SOURCE;
 import static org.openremote.model.attribute.AttributeEvent.Source.CLIENT;
+import static org.openremote.model.attribute.AttributeEvent.Source.SENSOR;
 
 public class MqttEventHandler implements  HostApplicationEventHandler {
 
@@ -159,7 +160,7 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
         if (metric.getTimestamp()!=null) attributeEvent =  new AttributeEvent(deviceUuid, formatMetricName(metric.getName()), metric.getValue(),metric.getTimestamp().getTime());
         else attributeEvent = new AttributeEvent(deviceUuid, formatMetricName(metric.getName()), metric.getValue());
         Map<String, Object> headers = new HashMap<>();
-        headers.put(HEADER_SOURCE, CLIENT);
+        headers.put(HEADER_SOURCE, SENSOR);
         messageBrokerService.getFluentProducerTemplate()
                 .withHeaders(headers)
                 .withBody(attributeEvent)
@@ -168,7 +169,7 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
 
     }
 
-    private String getAssetId(String dscriptorString){
+    public static String getAssetId(String dscriptorString){
         return UniqueIdentifierGenerator.generateId(dscriptorString);
     }
 
