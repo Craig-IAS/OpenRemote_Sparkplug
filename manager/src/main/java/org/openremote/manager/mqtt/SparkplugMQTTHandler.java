@@ -14,6 +14,7 @@ import org.eclipse.tahu.mqtt.MqttServerName;
 import org.keycloak.KeycloakSecurityContext;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 
+import org.openremote.container.message.MessageBrokerService;
 import org.openremote.manager.security.ManagerIdentityService;
 import org.openremote.manager.security.ManagerKeycloakIdentityProvider;
 import org.openremote.model.Container;
@@ -41,12 +42,7 @@ public class SparkplugMQTTHandler extends MQTTHandler {
     protected MqttClientId mqttClientId;
 
     public SparkplugMQTTHandler() throws TahuException {
-        this.mqttEventHandler = new MqttEventHandler();
-        this.commandPublisher = new MqttCommandPublisher();
-        this.mqttServerName = new MqttServerName("openremote");
-        this.mqttClientId = new MqttClientId("openremote",true);
-        this.decoder = new SparkplugBPayloadDecoder();
-        this.payloadHandler = new TahuPayloadHandler(mqttEventHandler, commandPublisher, decoder);
+
     }
 
     @Override
@@ -65,6 +61,13 @@ public class SparkplugMQTTHandler extends MQTTHandler {
         ManagerIdentityService identityService = container.getService(ManagerIdentityService.class);
         assetService = container.getService(AssetStorageService.class);
         timerService = container.getService(TimerService.class);
+        messageBrokerService = container.getService(MessageBrokerService.class);
+        mqttEventHandler = new MqttEventHandler(assetService,messageBrokerService);
+        commandPublisher = new MqttCommandPublisher();
+        mqttServerName = new MqttServerName("openremote");
+        mqttClientId = new MqttClientId("openremote",true);
+        decoder = new SparkplugBPayloadDecoder();
+        payloadHandler = new TahuPayloadHandler(mqttEventHandler, commandPublisher, decoder);
 
         //TODO: publish mqtt birth message as per sparkplug spec
         ///TODO: sub to own topic as per sparkplug spec
