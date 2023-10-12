@@ -19,6 +19,7 @@ import org.openremote.model.attribute.Attribute;
 import org.openremote.model.attribute.AttributeEvent;
 import org.openremote.model.attribute.MetaItem;
 import org.openremote.model.custom.SparkplugAsset;
+import org.openremote.model.syslog.SyslogCategory;
 import org.openremote.model.value.MetaItemType;
 import org.openremote.model.value.ValueDescriptor;
 import org.openremote.model.value.ValueType;
@@ -27,12 +28,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 import static org.openremote.manager.event.ClientEventService.CLIENT_INBOUND_QUEUE;
 import static org.openremote.manager.mqtt.DefaultMQTTHandler.prepareHeaders;
 import static org.openremote.model.attribute.AttributeEvent.HEADER_SOURCE;
 import static org.openremote.model.attribute.AttributeEvent.Source.CLIENT;
 import static org.openremote.model.attribute.AttributeEvent.Source.SENSOR;
+import static org.openremote.model.syslog.SyslogCategory.API;
 
 public class MqttEventHandler implements  HostApplicationEventHandler {
 
@@ -40,6 +43,7 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
     protected EdgeNodeManager edgeNodeManager;
     protected AssetStorageService assetStorageService;
     protected MessageBrokerService messageBrokerService;
+    private static final Logger LOG = SyslogCategory.getLogger(API, MqttEventHandler.class);
 
     public MqttEventHandler(AssetStorageService assetStorageService, MessageBrokerService messageBrokerService ){
         this.hostApplicationMetricMap = HostApplicationMetricMap.getInstance();
@@ -83,7 +87,15 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
         else{
             List<Attribute> attributesList = getAttributesFromPayload(sparkplugEdgeNode);
             asset.addOrReplaceAttributes(attributesList.toArray(new Attribute[attributesList.size()]));
+            Asset<?> mergedAsset = assetStorageService.merge(asset);
+            if(mergedAsset != null){
+                LOG.info("Updated Asset with new birth message " + asset);
+                //            getLogger().info()
+            }else{
+                LOG.info("Failed to update Asset: " + asset);
+            }
         }
+
 
 
 
@@ -191,6 +203,12 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
 
         sparkplugAsset.addOrReplaceAttributes(attributesList.toArray(new Attribute[attributesList.size()]));
         Asset<?> mergedAsset = assetStorageService.merge(sparkplugAsset);
+        if(mergedAsset != null){
+            LOG.info("Created new Sparkplug asset " + sparkplugAsset);
+            //            getLogger().info()
+        }else{
+            LOG.info("Failed to Created Asset: " + sparkplugAsset);
+        }
 
 
     }

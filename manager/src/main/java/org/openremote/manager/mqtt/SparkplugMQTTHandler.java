@@ -124,7 +124,7 @@ public class SparkplugMQTTHandler extends MQTTHandler {
         timerService = container.getService(TimerService.class);
         messageBrokerService = container.getService(MessageBrokerService.class);
         mqttEventHandler = new MqttEventHandler(assetService,messageBrokerService);
-        commandPublisher = new MqttCommandPublisher();
+        commandPublisher = new MqttCommandPublisher(assetService, timerService, mqttBrokerService);
         mqttServerName = new MqttServerName("openremote");
         mqttClientId = new MqttClientId("openremote",true);
         decoder = new SparkplugBPayloadDecoder();
@@ -269,15 +269,22 @@ public class SparkplugMQTTHandler extends MQTTHandler {
 
     private Consumer<SharedEvent> getSubscriptionEventConsumer(RemotingConnection connection, String[] topicArray) {
         // Always publish asset/attribute messages with QoS 0
-        MqttQoS mqttQoS = MqttQoS.AT_MOST_ONCE;
+        //if topic length equals 4 then its a sparkplug node if it is 5 then its a device
+
+
         return ev -> {
             if (ev instanceof AttributeEvent attributeEvent) {
-                mqttBrokerService.publishMessage(String.join("/", topicArray),
-                        attributeEvent.getValue().orElse(null), mqttQoS);
+                try {
+                    commandPublisher.publishCommandFromEvent(topicArray, attributeEvent);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
             }
 
         };
     }
+
+
 
     private AssetFilter buildAssetFilter(String[] topicArray) {
 
