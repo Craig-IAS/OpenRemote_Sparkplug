@@ -14,6 +14,7 @@ import org.eclipse.tahu.message.model.SparkplugDescriptor;
 import org.openremote.container.message.MessageBrokerService;
 import org.openremote.container.util.UniqueIdentifierGenerator;
 import org.openremote.manager.asset.AssetStorageService;
+import org.openremote.manager.event.ClientEventService;
 import org.openremote.model.asset.Asset;
 import org.openremote.model.attribute.Attribute;
 import org.openremote.model.attribute.AttributeEvent;
@@ -31,7 +32,11 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 import static org.openremote.manager.event.ClientEventService.CLIENT_INBOUND_QUEUE;
+import static org.openremote.manager.event.ClientEventService.HEADER_CONNECTION_TYPE;
 import static org.openremote.manager.mqtt.DefaultMQTTHandler.prepareHeaders;
+import static org.openremote.manager.mqtt.MQTTBrokerService.getConnectionIDString;
+import static org.openremote.model.Constants.REALM_PARAM_NAME;
+import static org.openremote.model.Constants.SESSION_KEY;
 import static org.openremote.model.attribute.AttributeEvent.HEADER_SOURCE;
 import static org.openremote.model.attribute.AttributeEvent.Source.CLIENT;
 import static org.openremote.model.attribute.AttributeEvent.Source.SENSOR;
@@ -221,7 +226,7 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
         for (Map.Entry<String, HostMetric> entry : metricMap.entrySet()) {
             HostMetric metric = entry.getValue();
             if (metric.getName().equals("bdSeq")){ continue ;}
-            ValueDescriptor<?> valueDescriptor = mapDataTypeIndexToValueDescriptor(metric.getDataType().toIntValue());
+            ValueDescriptor valueDescriptor = getValueDesciptor(metric.getDataType().toIntValue());
             Attribute attribute = new Attribute( formatMetricName(metric.getName()),valueDescriptor,metric.getValue()).addMeta(new MetaItem(MetaItemType.LABEL,metric.getName()));
             attribute.addMeta(new MetaItem(MetaItemType.STORE_DATA_POINTS,"true"));
             PropertySet propertySet =  metric.getProperties();
@@ -265,18 +270,18 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
      * @param int index of the data type
      * @return {@link ValueDescriptor} for the given {@link Attribute} type
      */
-    public static ValueDescriptor<?> mapDataTypeIndexToValueDescriptor(int index) {
+    public static ValueDescriptor<?> getValueDesciptor(int index) {
         switch(index) {
             case 1:
-                return ValueType.INTEGER;  // Int8
+                return ValueType.BYTE;  // Int8
             case 2:
-                return ValueType.INTEGER;  // Int16
+                return new ValueDescriptor<>("Short", Short.class);  // Int16
             case 3:
                 return ValueType.INTEGER;  // Int32
             case 4:
                 return ValueType.LONG;     // Int64
             case 5:
-                return ValueType.INTEGER;  // UInt8
+                return new ValueDescriptor<>("Short", Short.class);  // UInt8
             case 6:
                 return ValueType.INTEGER;  // UInt16
             case 7:
@@ -284,9 +289,9 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
             case 8:
                 return ValueType.BIG_INTEGER;  // UInt64
             case 9:
-                return ValueType.BIG_NUMBER;   // Float
+                return new ValueDescriptor<>("Float", Float.class);   // Float
             case 10:
-                return ValueType.LONG;   // Double
+                return ValueType.NUMBER ;   // Double
             case 11:
                 return ValueType.BOOLEAN;  // Boolean
             case 12:
@@ -298,14 +303,15 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
             case 15:
                 return ValueType.UUID;     // UUID
             case 16:
-                return ValueType.JSON_OBJECT;  // DataSet (tentative mapping)
+                throw new IllegalArgumentException("Unsupported DataType index: " + index);  // DataSet.class TODO: implement this at another stage
             case 17:
-                return ValueType.BYTE;     // Bytes
+                throw new IllegalArgumentException("Unsupported DataType index: " + index);
             // ... continue the mapping for other indices ...
             default:
                 throw new IllegalArgumentException("Unsupported DataType index: " + index);
         }
     }
+
 
 
 

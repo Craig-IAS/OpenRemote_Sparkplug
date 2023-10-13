@@ -1,13 +1,19 @@
 package org.openremote.manager.mqtt;
 
 import io.netty.handler.codec.mqtt.MqttQoS;
+import jdk.jfr.FlightRecorderPermission;
+import org.eclipse.tahu.SparkplugInvalidTypeException;
 import org.eclipse.tahu.SparkplugParsingException;
 import org.eclipse.tahu.host.CommandPublisher;
+import org.eclipse.tahu.host.manager.EdgeNodeManager;
+import org.eclipse.tahu.host.model.HostApplicationMetricMap;
+import org.eclipse.tahu.message.model.EdgeNodeDescriptor;
 import org.eclipse.tahu.message.model.MessageType;
 import org.eclipse.tahu.message.model.Metric;
 import org.eclipse.tahu.message.model.MetricDataType;
 import org.eclipse.tahu.message.model.SparkplugBPayload;
 import org.eclipse.tahu.message.model.SparkplugBPayload.SparkplugBPayloadBuilder;
+import org.eclipse.tahu.message.model.SparkplugDescriptor;
 import org.eclipse.tahu.message.model.Topic;
 import org.eclipse.tahu.model.MetricDataTypeMap;
 import org.eclipse.tahu.mqtt.MqttServerName;
@@ -24,6 +30,7 @@ import org.openremote.model.value.MetaItemType;
 import org.openremote.model.value.ValueDescriptor;
 import org.openremote.model.value.ValueType;
 
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.Optional;
 
@@ -33,11 +40,16 @@ public class MqttCommandPublisher implements CommandPublisher {
     protected TimerService timerService;
     protected MQTTBrokerService mqttBrokerService;
 
+    protected  HostApplicationMetricMap hostApplicationMetricMap;
+    protected  EdgeNodeManager edgeNodeManager;
+
     public MqttCommandPublisher(AssetStorageService assetService, TimerService timerService,
             MQTTBrokerService mqttBrokerService) {
         this.assetService = assetService;
         this.timerService = timerService;
         this.mqttBrokerService = mqttBrokerService;
+        this.hostApplicationMetricMap = HostApplicationMetricMap.getInstance();
+        this.edgeNodeManager = EdgeNodeManager.getInstance();
     }
 
     @Override
@@ -51,6 +63,13 @@ public class MqttCommandPublisher implements CommandPublisher {
         String atributeName = attributeEvent.getAttributeName();
         Asset<?> asset = assetService.find(assetId);
         MqttQoS mqttQoS = MqttQoS.AT_MOST_ONCE;
+
+        SparkplugDescriptor sparkplugDescriptor = topic.getSparkplugDescriptor();
+        EdgeNodeDescriptor edgeNodeDescriptor =  topic.getEdgeNodeDescriptor();
+
+
+
+
         try{
             Optional<Attribute<?>> optionalAttribute = asset.getAttribute(atributeName);
             if (!optionalAttribute.isPresent()) return;
@@ -59,8 +78,11 @@ public class MqttCommandPublisher implements CommandPublisher {
             Optional<MetaItem<?>> metaItem = meta.get("label");
             if (!metaItem.isPresent()) return;
             String label = (String) metaItem.get().getValue().get();
-            int dt = mapValueDescriptorToDataTypeIndex(attribute.getType());
-            Metric metric = new Metric(label,null,attributeEvent.timestamp,MetricDataType.fromInteger(dt),false,false,null,null,attributeEvent.getValue().get());
+            //get the datatype from the nodeManger
+            //cast the value to that class
+            MetricDataType dt = hostApplicationMetricMap.getDataType(edgeNodeDescriptor,sparkplugDescriptor,label);
+            Object castedValue = castToType(dt, attributeEvent.getValue().get());
+            Metric metric = new Metric(label,null,attributeEvent.timestamp,dt,false,false,null,null,castedValue);
 
             SparkplugBPayloadBuilder CMD = new SparkplugBPayloadBuilder().setTimestamp(attributeEvent.timestamp);
             CMD.addMetric(metric);
@@ -75,6 +97,9 @@ public class MqttCommandPublisher implements CommandPublisher {
 
 
     }
+
+
+
 
     @Override
     public void publishCommand(MqttServerName mqttServerName, Topic topic,
@@ -101,49 +126,15 @@ public class MqttCommandPublisher implements CommandPublisher {
 
     }
 
-    public static int mapValueDescriptorToDataTypeIndex(ValueDescriptor<?> descriptor) {
-        String type = descriptor.getName();
-
-        switch (type) {
-            case "integer":
-                // You might need further logic here since INTEGER maps to multiple indices (1, 2, 3, 5, 6)
-                // For this example, I'll just map it to one of them.
-                return 1;  // Int8 (or others based on your actual requirement)
-
-            case "long":
-                // Similar to INTEGER, LONG maps to multiple indices (4, 7, 10).
-                return 4;  // Int64 (or others based on your actual requirement)
-
-            case "bigInteger":
-                return 8;  // UInt64
-
-            case "bigNumber":
-                return 9;  // Float
-
-            case "boolean":
-                return 11;  // Boolean
-
-            case "text":
-                // TEXT maps to multiple indices (12, 14). You'd need to distinguish them based on further logic.
-                return 12;  // String
-
-            case "dateAndTime":
-                return 13;  // DateTime
-
-            case "UUID":
-                return 15;  // UUID
-
-            case "JSON":
-                return 16;  // DataSet
-
-            case "byte":
-                return 17;  // Bytes
-
-            // ... continue the mapping for other ValueTypes ...
-
-            default:
-                throw new IllegalArgumentException("Unsupported ValueDescriptor: " + descriptor);
+    public static Object castToType(MetricDataType metricDataType, Object value) {
+        Class<?> dt = metricDataType.getClazz();
+        if (dt.equals(Float.class)){
+            return Float.parseFloat(value.toString());
         }
+        return dt.cast(value);
+
     }
+
+
 
 }
