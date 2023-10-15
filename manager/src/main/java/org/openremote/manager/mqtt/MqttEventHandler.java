@@ -31,7 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import static org.openremote.manager.asset.AssetProcessingService.ATTRIBUTE_EVENT_QUEUE;
 import static org.openremote.manager.event.ClientEventService.CLIENT_INBOUND_QUEUE;
+import static org.openremote.manager.event.ClientEventService.CLIENT_OUTBOUND_QUEUE;
 import static org.openremote.manager.event.ClientEventService.HEADER_CONNECTION_TYPE;
 import static org.openremote.manager.mqtt.DefaultMQTTHandler.prepareHeaders;
 import static org.openremote.manager.mqtt.MQTTBrokerService.getConnectionIDString;
@@ -178,10 +180,11 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
         else attributeEvent = new AttributeEvent(deviceUuid, formatMetricName(metric.getName()), metric.getValue());
         Map<String, Object> headers = new HashMap<>();
         headers.put(HEADER_SOURCE, SENSOR);
+        headers.put(HEADER_CONNECTION_TYPE, ClientEventService.HEADER_CONNECTION_TYPE_MQTT);
         messageBrokerService.getFluentProducerTemplate()
                 .withHeaders(headers)
                 .withBody(attributeEvent)
-                .to(CLIENT_INBOUND_QUEUE)
+                .to(ATTRIBUTE_EVENT_QUEUE)
                 .asyncSend();
 
     }
@@ -203,7 +206,6 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
         attributesList.add(new Attribute<>("GroupId", ValueType.TEXT, sparkplugEdgeNode.getGroupId()));
         attributesList.add(new Attribute<>("DeviceId", ValueType.TEXT, sparkplugEdgeNode.getEdgeNodeId()));
         attributesList.add(new Attribute<>("Online", ValueType.BOOLEAN, sparkplugEdgeNode.isOnline()).addMeta(new MetaItem(MetaItemType.READ_ONLY, "true")));
-
 
 
         sparkplugAsset.addOrReplaceAttributes(attributesList.toArray(new Attribute[attributesList.size()]));
@@ -235,7 +237,7 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
                 MetaItem unit = new MetaItem(MetaItemType.UNITS,units);
                 attribute.addMeta(unit);
             }
-
+            attributesList.add(new Attribute<>("Online", ValueType.BOOLEAN, sparkplugEdgeNode.isOnline()).addMeta(new MetaItem(MetaItemType.READ_ONLY, "true")));
             attributesList.add(attribute);
 
 

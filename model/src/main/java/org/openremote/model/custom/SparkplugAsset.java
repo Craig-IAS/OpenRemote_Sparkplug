@@ -21,10 +21,12 @@ public class SparkplugAsset extends Asset<SparkplugAsset>   {
     public static final AttributeDescriptor<String> GROUP_ID = new AttributeDescriptor<>("GroupId", ValueType.TEXT);
     public static final AttributeDescriptor<String> DEVICE_ID = new AttributeDescriptor<>("DeviceId", ValueType.TEXT);
     public static final AttributeDescriptor<Boolean> ONLINE = new AttributeDescriptor<>("Online", ValueType.BOOLEAN).withFormat(ValueFormat.BOOLEAN_ON_OFF());
-    public static final AttributeDescriptor<Boolean> NODE_CONTROL_REBOOT = new AttributeDescriptor<>("NodeControlReboot", ValueType.BOOLEAN).withFormat(ValueFormat.BOOLEAN_AS_PRESSED_RELEASED());
-    public static final AttributeDescriptor<Boolean> NODE_CONTROL_REBIRTH = new AttributeDescriptor<>("NodeControlRebirth", ValueType.BOOLEAN).withFormat(ValueFormat.BOOLEAN_AS_PRESSED_RELEASED());
-    public static final AttributeDescriptor<Boolean> NODE_CONTROL_NEXT_SERVER= new AttributeDescriptor<>("NodeControlNextServer", ValueType.BOOLEAN).withFormat(ValueFormat.BOOLEAN_AS_PRESSED_RELEASED());
 
+    public static final MetaItem REBIRTH_LABEL = new MetaItem<>(MetaItemType.LABEL,SparkplugConstants.REBIRTH);
+    public static final AttributeDescriptor<Boolean> NODE_CONTROL_REBIRTH = new AttributeDescriptor<>("DeviceControlRebirth", ValueType.BOOLEAN,REBIRTH_LABEL).withFormat(ValueFormat.BOOLEAN_AS_PRESSED_RELEASED());
+
+
+    private static final MetaMap rebirthMetaMap = new MetaMap();
 
 
 
@@ -55,17 +57,13 @@ public class SparkplugAsset extends Asset<SparkplugAsset>   {
         return getAttributes().getValue(ONLINE);
     }
 
-    public Optional<Boolean> getNodeControlReboot() {
-        return getAttributes().getValue(NODE_CONTROL_REBOOT);
-    }
+
 
     public Optional<Boolean> getNodeControlRebirth() {
         return getAttributes().getValue(NODE_CONTROL_REBIRTH);
     }
 
-    public Optional<Boolean> getNodeControlNextServer() {
-        return getAttributes().getValue(NODE_CONTROL_NEXT_SERVER);
-    }
+
 
 
 

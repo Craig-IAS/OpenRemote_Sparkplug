@@ -12,6 +12,7 @@ import org.eclipse.tahu.exception.TahuException;
 import org.eclipse.tahu.host.CommandPublisher;
 import org.eclipse.tahu.host.TahuPayloadHandler;
 import org.eclipse.tahu.message.PayloadDecoder;
+import org.eclipse.tahu.message.model.MessageType;
 import org.eclipse.tahu.message.model.SparkplugBPayload;
 import org.eclipse.tahu.message.SparkplugBPayloadDecoder;
 import org.eclipse.tahu.mqtt.MqttClientId;
@@ -30,6 +31,7 @@ import org.openremote.model.asset.AssetEvent;
 import org.openremote.model.asset.AssetFilter;
 import org.openremote.model.attribute.AttributeEvent;
 import org.openremote.model.event.TriggeredEventSubscription;
+import org.openremote.model.event.shared.EventFilter;
 import org.openremote.model.event.shared.EventSubscription;
 import org.openremote.model.event.shared.SharedEvent;
 import org.openremote.model.syslog.SyslogCategory;;
@@ -49,7 +51,9 @@ import static org.openremote.manager.event.ClientEventService.CLIENT_INBOUND_QUE
 import static org.openremote.manager.event.ClientEventService.CLIENT_OUTBOUND_QUEUE;
 import static org.openremote.manager.event.ClientEventService.HEADER_CONNECTION_TYPE;
 import static org.openremote.manager.event.ClientEventService.HEADER_CONNECTION_TYPE_MQTT;
+import static org.openremote.manager.event.ClientEventService.HEADER_CONNECTION_TYPE_WEBSOCKET;
 import static org.openremote.manager.mqtt.MQTTBrokerService.getConnectionIDString;
+import static org.openremote.manager.mqtt.MqttEventHandler.getAssetId;
 import static org.openremote.model.Constants.REALM_PARAM_NAME;
 import static org.openremote.model.Constants.SESSION_CLOSE;
 import static org.openremote.model.Constants.SESSION_KEY;
@@ -87,6 +91,8 @@ public class SparkplugMQTTHandler extends MQTTHandler {
     private static final String SPARKPLUG_NAMESPACE = "spBv10";
 
     protected AssetStorageService assetService;
+
+    protected ClientEventService clientEventService;
     protected TimerService timerService;
 
     protected MqttEventHandler mqttEventHandler;
@@ -96,7 +102,7 @@ public class SparkplugMQTTHandler extends MQTTHandler {
     protected TahuPayloadHandler payloadHandler;
 
     protected MqttServerName mqttServerName;
-    protected MqttClientId mqttClientId;
+
     protected final Cache<String, ConcurrentHashSet<String>> authorizationCache = CacheBuilder.newBuilder()
             .maximumSize(100000)
             .expireAfterWrite(300000, TimeUnit.MILLISECONDS)
@@ -126,7 +132,7 @@ public class SparkplugMQTTHandler extends MQTTHandler {
         mqttEventHandler = new MqttEventHandler(assetService,messageBrokerService);
         commandPublisher = new MqttCommandPublisher(assetService, timerService, mqttBrokerService);
         mqttServerName = new MqttServerName("openremote");
-        mqttClientId = new MqttClientId("openremote",true);
+        clientEventService = container.getService(ClientEventService.class);
         decoder = new SparkplugBPayloadDecoder();
         payloadHandler = new TahuPayloadHandler(mqttEventHandler, commandPublisher, decoder);
 
@@ -137,6 +143,11 @@ public class SparkplugMQTTHandler extends MQTTHandler {
             isKeycloak = true;
             identityProvider = (ManagerKeycloakIdentityProvider) identityService.getIdentityProvider();
         }
+
+        clientEventService.addInternalSubscription(
+                AttributeEvent.class,
+                null, this::processAttributeEvent
+        );
 
 
     }
@@ -152,8 +163,8 @@ public class SparkplugMQTTHandler extends MQTTHandler {
                 from(CLIENT_OUTBOUND_QUEUE)
                         .routeId("ClientOutbound-SparkplugMQTTHandler")
                         .filter(and(
-                                header(HEADER_CONNECTION_TYPE).isEqualTo(HEADER_CONNECTION_TYPE_MQTT),
-                                body().isInstanceOf(TriggeredEventSubscription.class)
+                                header(HEADER_SOURCE).isEqualTo(CLIENT),
+                                 body().isInstanceOf(TriggeredEventSubscription.class)
                         ))
                         .process(exchange -> {
                             // Get the subscriber consumer
@@ -229,41 +240,32 @@ public class SparkplugMQTTHandler extends MQTTHandler {
     @Override
     public void onSubscribe(RemotingConnection connection, Topic topic) {
 
+
+
         //log the topic and body
         getLogger().info("onSubscribe: " + topic );
         //The topic is being split by a period so for now we rebuild the topic
         //TODO: fix this somewhere else
         String topicString = topic.getString().replaceFirst("/", ".");
         String[] topicArray = topicString.split("/");
-
-        AssetFilter filter = buildAssetFilter(topicArray);
-
-        Consumer<SharedEvent> eventConsumer = getSubscriptionEventConsumer(connection, topicArray);
-        EventSubscription subscription = new EventSubscription(
-                AttributeEvent.class,
-                filter,
-                topicString
-        );
-
-        Map<String, Object> headers = prepareHeaders(topicArray[1], connection);
-        messageBrokerService.getFluentProducerTemplate()
-                .withHeaders(headers)
-                .withBody(subscription)
-                .to(CLIENT_INBOUND_QUEUE)
-                .asyncSend();
-        synchronized (connectionSubscriberInfoMap) {
-            connectionSubscriberInfoMap.compute(getConnectionIDString(connection), (connectionID, subscriberInfo) -> {
-                if (subscriberInfo == null) {
-                    return new SubscriberInfo(topicString, eventConsumer);
-                } else {
-                    subscriberInfo.add(topicString, eventConsumer);
-                    return subscriberInfo;
-                }
-            });
+        //find the asset
+        String deviceUuid;
+        if (topicArray.length >4){
+             deviceUuid = getAssetId(topicArray[1]+topicArray[3]+topicArray[4]);
+        }else{
+             deviceUuid = getAssetId(topicArray[1]+"/"+topicArray[3]);
         }
 
+        Asset<?> asset = assetService.find(deviceUuid);
+        if (asset == null)return;
+        if( topicArray[2].equals("NCMD") || topicArray[2].equals("DCMD") ){
 
 
+
+            }
+        else {
+            return;
+        }
 
     }
 
@@ -275,7 +277,7 @@ public class SparkplugMQTTHandler extends MQTTHandler {
         return ev -> {
             if (ev instanceof AttributeEvent attributeEvent) {
                 try {
-                    commandPublisher.publishCommandFromEvent(topicArray, attributeEvent);
+                    commandPublisher.publishCommandFromEvent(topicArray, attributeEvent,connection);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -284,14 +286,21 @@ public class SparkplugMQTTHandler extends MQTTHandler {
         };
     }
 
+    protected void processAttributeEvent(AttributeEvent attributeEvent) {
+        commandPublisher.processAttributeEvent(attributeEvent);
+    }
+    protected void processAssetEvent(AssetEvent assetEvent) {
+        LOG.fine(assetEvent.toString());
+        return;
+    }
 
 
     private AssetFilter buildAssetFilter(String[] topicArray) {
 
         String realm = topicArray[1];
         AssetFilter<?> assetFilter = new AssetFilter<>().setRealm(realm);
-        assetFilter.setAssetIds(mqttEventHandler.getAssetId(topicArray[1]+"/"+topicArray[3]));
-        Asset<?> asset =  assetService.find(MqttEventHandler.getAssetId(topicArray[1]+"/"+topicArray[3]));
+        assetFilter.setAssetIds(getAssetId(topicArray[1]+"/"+topicArray[3]));
+        Asset<?> asset =  assetService.find(getAssetId(topicArray[1]+"/"+topicArray[3]));
         String[] attributeNamesArray = asset.getAttributes().values().stream()
                 .map(attribute -> attribute.getName())
                 .toArray(String[]::new);
@@ -332,17 +341,17 @@ public class SparkplugMQTTHandler extends MQTTHandler {
         String topicString = topic.getString();
         topicString = topicString.replaceFirst("/", ".");
         String[] topicArray = topicString.split("/");
-
+        if (topicArray[2].equals("NCMD") ||topicArray[2].equals("DCMD") ) return;
         MqttMessage message = new MqttMessage(extractReadableBytes(body));
+        String conID = getConnectionIDString(connection);
 
-
-
-
+        MqttClientId mqttClientId = null;
+        try {
+            mqttClientId = new MqttClientId( conID,false);
+        } catch (TahuException e) {
+            throw new RuntimeException(e);
+        }
         payloadHandler.handlePayload(topicString,topicArray,message,mqttServerName,mqttClientId);
-
-
-
-
 
     }
     private byte[] extractReadableBytes(ByteBuf buffer) {

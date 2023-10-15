@@ -2,11 +2,14 @@ package org.openremote.manager.mqtt;
 
 import io.netty.handler.codec.mqtt.MqttQoS;
 import jdk.jfr.FlightRecorderPermission;
+import org.apache.activemq.artemis.spi.core.protocol.RemotingConnection;
 import org.eclipse.tahu.SparkplugInvalidTypeException;
 import org.eclipse.tahu.SparkplugParsingException;
 import org.eclipse.tahu.host.CommandPublisher;
 import org.eclipse.tahu.host.manager.EdgeNodeManager;
+import org.eclipse.tahu.host.manager.SparkplugEdgeNode;
 import org.eclipse.tahu.host.model.HostApplicationMetricMap;
+import org.eclipse.tahu.message.SparkplugBPayloadEncoder;
 import org.eclipse.tahu.message.model.EdgeNodeDescriptor;
 import org.eclipse.tahu.message.model.MessageType;
 import org.eclipse.tahu.message.model.Metric;
@@ -17,22 +20,30 @@ import org.eclipse.tahu.message.model.SparkplugDescriptor;
 import org.eclipse.tahu.message.model.Topic;
 import org.eclipse.tahu.model.MetricDataTypeMap;
 import org.eclipse.tahu.mqtt.MqttServerName;
+import org.eclipse.tahu.protobuf.SparkplugBProto.Payload;
 import org.openremote.container.message.MessageBrokerService;
 import org.openremote.container.timer.TimerService;
 import org.openremote.manager.asset.AssetStorageService;
 import org.openremote.model.asset.Asset;
 import org.openremote.model.attribute.Attribute;
 import org.openremote.model.attribute.AttributeEvent;
+import org.openremote.model.attribute.AttributeMap;
 import org.openremote.model.attribute.MetaItem;
 import org.openremote.model.attribute.MetaMap;
 import org.openremote.model.custom.SparkplugAsset;
+import org.openremote.model.syslog.SyslogCategory;
 import org.openremote.model.value.MetaItemType;
 import org.openremote.model.value.ValueDescriptor;
 import org.openremote.model.value.ValueType;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 import java.util.Optional;
+import java.util.logging.Logger;
+
+import static org.openremote.model.syslog.SyslogCategory.API;
 
 public class MqttCommandPublisher implements CommandPublisher {
 
@@ -42,6 +53,8 @@ public class MqttCommandPublisher implements CommandPublisher {
 
     protected  HostApplicationMetricMap hostApplicationMetricMap;
     protected  EdgeNodeManager edgeNodeManager;
+    protected SparkplugBPayloadEncoder encoder;
+    private static final Logger LOG = SyslogCategory.getLogger(API, MqttCommandPublisher.class);
 
     public MqttCommandPublisher(AssetStorageService assetService, TimerService timerService,
             MQTTBrokerService mqttBrokerService) {
@@ -50,6 +63,7 @@ public class MqttCommandPublisher implements CommandPublisher {
         this.mqttBrokerService = mqttBrokerService;
         this.hostApplicationMetricMap = HostApplicationMetricMap.getInstance();
         this.edgeNodeManager = EdgeNodeManager.getInstance();
+        this.encoder = new SparkplugBPayloadEncoder();
     }
 
     @Override
@@ -57,7 +71,7 @@ public class MqttCommandPublisher implements CommandPublisher {
 
     }
 
-    public void publishCommandFromEvent(String[] topicArray, AttributeEvent attributeEvent)  throws Exception {
+    public void publishCommandFromEvent(String[] topicArray, AttributeEvent attributeEvent, RemotingConnection connection)  throws Exception {
         Topic topic = getTopicFromArray(topicArray);
         String assetId = MqttEventHandler.getAssetId(getAssitIdFromTopic(topic));
         String atributeName = attributeEvent.getAttributeName();
@@ -137,4 +151,65 @@ public class MqttCommandPublisher implements CommandPublisher {
 
 
 
+    public void processAttributeEvent(AttributeEvent attributeEvent) {
+        MqttQoS mqttQoS = MqttQoS.AT_MOST_ONCE;
+        Asset<?> asset = assetService.find(attributeEvent.getAttributeState().getRef().getId());
+        if(!(asset instanceof SparkplugAsset))return;
+        AttributeMap attributes = asset.getAttributes();
+        Optional<Attribute<?>> optionalAttribute = attributes.get(attributeEvent.getAttributeName());
+        Attribute<?> eventAttribute = optionalAttribute.get();
+        MetaMap metaMap = eventAttribute.getMeta();
+        Optional<MetaItem<?>> optionalMetaItem = metaMap.get("label");
+        MetaItem<?> metaItem = optionalMetaItem.get();
+        String label = String.valueOf(metaItem.getValue().get());
+        EdgeNodeDescriptor edgeNodeDescriptor = new EdgeNodeDescriptor(
+                (String) attributes.get("GroupId").get().getValue().get(),
+                (String) attributes.get("DeviceId").get().getValue().get());
+        SparkplugEdgeNode sparkplugEdgeNode = EdgeNodeManager.getInstance().getSparkplugEdgeNode(edgeNodeDescriptor);
+        Date timestamp = new Date(attributeEvent.getTimestamp());
+        SparkplugBPayloadBuilder CMD = new SparkplugBPayloadBuilder().setTimestamp(timestamp);
+        SparkplugBPayload payload;
+        Topic topic = new Topic(SparkplugConstants.NAMESPACE,
+                edgeNodeDescriptor.getGroupId(),
+                edgeNodeDescriptor.getEdgeNodeId(),
+                MessageType.NCMD);
+        if (sparkplugEdgeNode == null){
+            try {
+                LOG.fine("Unknown Edgenode requesting new birth message");
+                Metric rebirth = new Metric(SparkplugConstants.REBIRTH,null,timestamp,MetricDataType.Boolean,false,false,null,null,true);
+                CMD.addMetric(rebirth);
+                payload = CMD.createPayload();
+                mqttBrokerService.publishByteMessage(topic.toString(),encoder.getBytes(payload,false), mqttQoS);
+            } catch (SparkplugInvalidTypeException e) {
+                throw new RuntimeException(e);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }else{
+            Metric metric = sparkplugEdgeNode.getMetric(label);
+            Object metricValue = metric.getValue();
+            Object eventValue = castToType(metric.getDataType(),attributeEvent.getValue().get());
+            //the value is the same as the cache, ignore to prevent infinite loop
+            if(eventValue.equals(metricValue)) return;
+
+            try {
+                Metric metricToSend = new Metric(label,null,timestamp,metric.getDataType(),false,false,null,null,eventValue);
+                CMD = new SparkplugBPayloadBuilder().setTimestamp(timestamp);
+                CMD.addMetric(metricToSend);
+                payload = CMD.createPayload();
+                mqttBrokerService.publishByteMessage(topic.toString(),encoder.getBytes(payload,false), mqttQoS);
+                sparkplugEdgeNode.updateValue(label,eventValue);
+            } catch (SparkplugInvalidTypeException e) {
+                throw new RuntimeException(e);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+
+        }
+
+
+
+
+        return;
+    }
 }
