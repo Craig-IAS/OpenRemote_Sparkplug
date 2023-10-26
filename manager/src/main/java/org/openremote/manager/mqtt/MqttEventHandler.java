@@ -88,7 +88,6 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
         //find the asset
         String deviceUuid = getAssetId(edgeNodeDescriptor.getDescriptorString());
         Asset<?> asset = assetStorageService.find(deviceUuid);
-        //build attribute list
 
         if (asset == null) CreateNewAsset(edgeNodeDescriptor);
         else{
@@ -266,12 +265,7 @@ public class MqttEventHandler implements  HostApplicationEventHandler {
         return camelCase.toString();
     }
 
-    /**
-     * Returns the {@link ValueDescriptor} for the given {sparkplug data type.
-     *
-     * @param int index of the data type
-     * @return {@link ValueDescriptor} for the given {@link Attribute} type
-     */
+
     public static ValueDescriptor<?> getValueDesciptor(int index) {
         switch(index) {
             case 1:

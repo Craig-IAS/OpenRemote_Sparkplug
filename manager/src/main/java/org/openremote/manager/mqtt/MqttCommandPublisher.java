@@ -152,8 +152,10 @@ public class MqttCommandPublisher implements CommandPublisher {
 
 
     public void processAttributeEvent(AttributeEvent attributeEvent) {
+
+
         MqttQoS mqttQoS = MqttQoS.AT_MOST_ONCE;
-        Asset<?> asset = assetService.find(attributeEvent.getAttributeState().getRef().getId());
+        Asset<?> asset = assetService.find(attributeEvent.getAssetId());
         if(!(asset instanceof SparkplugAsset))return;
         AttributeMap attributes = asset.getAttributes();
         Optional<Attribute<?>> optionalAttribute = attributes.get(attributeEvent.getAttributeName());

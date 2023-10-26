@@ -34,6 +34,7 @@ import org.openremote.model.event.TriggeredEventSubscription;
 import org.openremote.model.event.shared.EventFilter;
 import org.openremote.model.event.shared.EventSubscription;
 import org.openremote.model.event.shared.SharedEvent;
+import org.openremote.model.event.shared.SparkplugEventFilter;
 import org.openremote.model.syslog.SyslogCategory;;
 import java.util.HashMap;
 import java.util.List;
@@ -143,7 +144,9 @@ public class SparkplugMQTTHandler extends MQTTHandler {
             isKeycloak = true;
             identityProvider = (ManagerKeycloakIdentityProvider) identityService.getIdentityProvider();
         }
+        SparkplugEventFilter filter = new SparkplugEventFilter<>();
 
+        //TODO: move this to onSubscribe, create an buildAsset filter that adds the assetId to the filters assetIds array
         clientEventService.addInternalSubscription(
                 AttributeEvent.class,
                 null, this::processAttributeEvent

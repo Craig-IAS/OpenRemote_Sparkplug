@@ -17,6 +17,6 @@ public class SparkplugEventFilter<T extends AttributeEvent> extends EventFilter<
 
 
 
-        return null;
+        return event;
     }
 }
